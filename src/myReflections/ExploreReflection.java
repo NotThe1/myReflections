@@ -13,6 +13,8 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.File;
+import java.io.FileFilter;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -28,7 +30,9 @@ import java.util.Set;
 import java.util.prefs.Preferences;
 
 import javax.swing.Box;
+import javax.swing.DefaultListModel;
 import javax.swing.JButton;
+import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -63,6 +67,12 @@ public class ExploreReflection {
 	private JButton btnDiscoverClassMembers;
 	private JTextField txtClass2;
 
+	private Component verticalStrut_5;
+	private JButton btnGetNewProject;
+	private JLabel lblCurrentProject;
+
+	private DefaultListModel<String> targetClasses;
+
 	/**
 	 * Launch the application.
 	 */
@@ -88,7 +98,7 @@ public class ExploreReflection {
 	}// printAncestor
 
 	private void printMembers(Member[] mbrs, String s) {
-		log.infof("%s:%n", s);
+		log.post(Color.GREEN, "%s:%n", s);
 		for (Member mbr : mbrs) {
 			if (mbr instanceof Field)
 				log.infof("  %s%n", ((Field) mbr).toGenericString());
@@ -103,7 +113,7 @@ public class ExploreReflection {
 	}// printMembers
 
 	private void printClasses(Class<?> c) {
-		log.infof("Classes:%n");
+		log.post(Color.GREEN, "Classes:%n");
 		Class<?>[] clss = c.getClasses();
 		for (Class<?> cls : clss)
 			log.infof("  %s%n", cls.getCanonicalName());
@@ -111,6 +121,49 @@ public class ExploreReflection {
 			log.infof("  -- No member interfaces, classes, or enums --%n");
 		log.infof("%n");
 	}// printClasses
+
+	private void printDeclaredClasses(Class<?> c) {
+		log.post(Color.GREEN, "Classes:%n");
+		Class<?>[] clss = c.getDeclaredClasses();
+		for (Class<?> cls : clss)
+			log.infof("  %s%n", cls.getCanonicalName());
+		if (clss.length == 0)
+			log.infof("  -- No member interfaces, classes, or enums --%n");
+		log.infof("%n");
+	}// printClasses
+
+	private void loadTargetClasses(File folder, DefaultListModel targetClasses) {
+		/* Find all the sub directories in this directory */
+		File[] directories = folder.listFiles(new FileFilter() {
+			@Override
+			public boolean accept(File fileContent) {
+				return fileContent.isDirectory();
+			}// accept
+		});
+
+		if (directories != null && directories.length > 0) {
+			for (File dir : directories) {
+				loadTargetClasses(dir,  targetClasses);
+			} // if
+		} // for
+		
+		/* Find all the java files in this directory */
+		File[] files = folder.listFiles(new FileFilter() {
+			@Override
+			public boolean accept(File fileContent) {
+				return fileContent.getName().toLowerCase().endsWith(".java");
+			}// accept
+		});
+		
+		if (files != null && files.length > 0) {
+			for (File file : files) {
+				log.infof("Dir: %-30s File:  %s%n", folder.getName(),file.getName());
+			} // if
+		} // for
+	
+
+
+	}// loadTargetClasses
 
 	/**
 	 * Create the application.
@@ -129,6 +182,7 @@ public class ExploreReflection {
 		myPrefs.putInt("LocX", point.x);
 		myPrefs.putInt("LocY", point.y);
 		myPrefs.putInt("Divider", splitPane.getDividerLocation());
+		myPrefs.put("CurrentProject", lblCurrentProject.getText());
 		myPrefs = null;
 	}// appClose
 
@@ -139,6 +193,7 @@ public class ExploreReflection {
 		frame.setSize(myPrefs.getInt("Width", 761), myPrefs.getInt("Height", 693));
 		frame.setLocation(myPrefs.getInt("LocX", 100), myPrefs.getInt("LocY", 100));
 		splitPane.setDividerLocation(myPrefs.getInt("Divider", 250));
+		lblCurrentProject.setText(myPrefs.get("CurrentProject", "C:\\Users\\admin\\git"));
 		myPrefs = null;
 
 		log.setTextPane(txtLog);
@@ -213,15 +268,16 @@ public class ExploreReflection {
 		scrollPane.setColumnHeaderView(lblNewLabel);
 
 		txtLog = new JTextPane();
+		txtLog.setFont(new Font("Courier New", Font.PLAIN, 16));
 		scrollPane.setViewportView(txtLog);
 
 		panelLeft = new JPanel();
 		splitPane.setLeftComponent(panelLeft);
 		GridBagLayout gbl_panelLeft = new GridBagLayout();
 		gbl_panelLeft.columnWidths = new int[] { 0, 0, 0 };
-		gbl_panelLeft.rowHeights = new int[] { 0, 0, 0, 0, 0, 0, 0 };
+		gbl_panelLeft.rowHeights = new int[] { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 		gbl_panelLeft.columnWeights = new double[] { 0.0, 1.0, Double.MIN_VALUE };
-		gbl_panelLeft.rowWeights = new double[] { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Double.MIN_VALUE };
+		gbl_panelLeft.rowWeights = new double[] { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Double.MIN_VALUE };
 		panelLeft.setLayout(gbl_panelLeft);
 
 		verticalStrut_2 = Box.createVerticalStrut(20);
@@ -392,24 +448,27 @@ public class ExploreReflection {
 
 				try {
 					Class<?> c = Class.forName(txtClass2.getText());
-					log.post(Color.BLUE,"Class:%n  %s%n%n", c.getCanonicalName());
+					log.post(Color.BLUE, "Class:%n  %s%n%n", c.getCanonicalName());
 
 					Package p = c.getPackage();
-					log.post(Color.BLUE,"Package:%n  %s%n%n", (p != null ? p.getName() : "-- No Package --"));
+					log.post(Color.BLUE, "Package:%n  %s%n%n", (p != null ? p.getName() : "-- No Package --"));
 					printMembers(c.getConstructors(), "Constuctors");
 					printMembers(c.getFields(), "Fields");
 					printMembers(c.getMethods(), "Methods");
+					printMembers(c.getDeclaredMethods(), " Declared Methods");
 					printClasses(c);
+					log.addNL();
+					printDeclaredClasses(c);
 
 				} catch (ClassNotFoundException x) {
 					x.printStackTrace();
-				}//try
+				} // try
 
 			}// actionPerformed
 		});
 		GridBagConstraints gbc_btnDiscoverClassMembers = new GridBagConstraints();
 		gbc_btnDiscoverClassMembers.fill = GridBagConstraints.HORIZONTAL;
-		gbc_btnDiscoverClassMembers.insets = new Insets(0, 0, 0, 5);
+		gbc_btnDiscoverClassMembers.insets = new Insets(0, 0, 5, 5);
 		gbc_btnDiscoverClassMembers.gridx = 0;
 		gbc_btnDiscoverClassMembers.gridy = 5;
 		panelLeft.add(btnDiscoverClassMembers, gbc_btnDiscoverClassMembers);
@@ -417,10 +476,46 @@ public class ExploreReflection {
 		txtClass2 = new JTextField();
 		txtClass2.setColumns(10);
 		GridBagConstraints gbc_txtClass2 = new GridBagConstraints();
+		gbc_txtClass2.insets = new Insets(0, 0, 5, 0);
 		gbc_txtClass2.fill = GridBagConstraints.HORIZONTAL;
 		gbc_txtClass2.gridx = 1;
 		gbc_txtClass2.gridy = 5;
 		panelLeft.add(txtClass2, gbc_txtClass2);
+
+		verticalStrut_5 = Box.createVerticalStrut(20);
+		GridBagConstraints gbc_verticalStrut_5 = new GridBagConstraints();
+		gbc_verticalStrut_5.insets = new Insets(0, 0, 5, 5);
+		gbc_verticalStrut_5.gridx = 0;
+		gbc_verticalStrut_5.gridy = 6;
+		panelLeft.add(verticalStrut_5, gbc_verticalStrut_5);
+
+		btnGetNewProject = new JButton("Get Project");
+		btnGetNewProject.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				JFileChooser fc = new JFileChooser(lblCurrentProject.getText());
+				fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+				if (fc.showOpenDialog(frame) != JFileChooser.APPROVE_OPTION) {
+					return;
+				} // if
+				lblCurrentProject.setText(fc.getSelectedFile().toString());
+				targetClasses = new DefaultListModel<String>();
+				targetClasses.clear();
+				File targetDir = new File(lblCurrentProject.getText());
+				loadTargetClasses(targetDir, targetClasses);
+			}// actionPerformed
+		});
+		GridBagConstraints gbc_btnGetNewProject = new GridBagConstraints();
+		gbc_btnGetNewProject.fill = GridBagConstraints.HORIZONTAL;
+		gbc_btnGetNewProject.insets = new Insets(0, 0, 0, 5);
+		gbc_btnGetNewProject.gridx = 0;
+		gbc_btnGetNewProject.gridy = 7;
+		panelLeft.add(btnGetNewProject, gbc_btnGetNewProject);
+
+		lblCurrentProject = new JLabel("New label");
+		GridBagConstraints gbc_lblCurrentProject = new GridBagConstraints();
+		gbc_lblCurrentProject.gridx = 1;
+		gbc_lblCurrentProject.gridy = 7;
+		panelLeft.add(lblCurrentProject, gbc_lblCurrentProject);
 
 		panelStatus = new JPanel();
 		panelStatus.setBorder(new BevelBorder(BevelBorder.LOWERED, null, null, null, null));
